@@ -27,6 +27,9 @@ Many do.  But here are some advantages of using snap:
 ## Examples
 
 ```
+$ snap myfile
+./myfile.20150316.201757-0800
+
      # include a non-existent file, a device file, a root directory file, and a non-readble file
 $ snap zzzzz /dev/null /installer.failurerequests ~/tmp/noread ~/bin/gpgedit gmvault.log ; echo status=$?
 snap: skipping 'zzzzz': can't stat
