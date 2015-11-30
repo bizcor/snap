@@ -1,0 +1,186 @@
+#!/bin/bash
+
+export PATH=/usr/sbin:/usr/bin:/bin
+
+     # basename of path with which we are being invoked
+pgm=${0##*/}
+
+#-----------------------------------------------------------------------
+print_usage () {
+  echo 1>&2 "usage: $pgm [ options ] File [ File [ ... ]]
+
+For each file given, make a copy whose name includes a timestamp.  The default
+time to use for the timestamp is the mtime of the original file.  Preserve for
+each copy the ownership and permissions of the original file (to the extent
+that caller has the privilege to do so).
+
+options:
+  -d Directory   Make all copies in Directory.  The default is to make each
+                 copy in the directory of the original file.
+
+  -n             Use the current time for the timestamp in each copied file.
+                 The default is to use the time of last modification of the
+                 original file.
+
+  -h             List usage
+
+Each file must be a regular file or a symbolic link to an existing regular file.
+If a file is a symlink, a copy of the target of the symlink will be made.  If
+the directory option is not used, the copy will be made in the directory
+containing the symlink, rather than the directory of its target.
+
+Examples:
+$ $pgm my-file
+./my-file.20131129.192504-0800
+
+$ (export TZ=GMT; $pgm my-file)
+./my-file.20131130.032504+0000
+
+$ $pgm -n my-file
+./my-file.20151127.121051-0800
+
+$ $pgm -n my-file
+./my-file.20151127.121101-0800
+
+$ $pgm -d /var/tmp my-file
+/var/tmp/my-file.20131129.192504-0800
+"
+} # print_usage
+
+#=======================================================================
+
+     # need at least one command line argument
+[[ $# = 0 ]] && {
+  print_usage
+  exit 1
+}
+
+     # parse command line args
+unset now
+while getopts d:hn arg; do
+  case $arg in
+
+         # directory option
+    d) opt_targetdir="$OPTARG"
+
+            # die if we can't write to the user specified target directory
+       [[ ! -w "$opt_targetdir" ]] && {
+         echo 1>&2 "$pgm: $opt_targetdir: write permission denied"
+         exit 1
+       }
+       ;;
+
+         # help option (not an error)
+    h) print_usage
+       exit 0
+       ;;
+
+    n) now=$( date +%Y%m%d.%H%M%S%z )
+       ;;
+
+         # unknown option (error)
+    *) print_usage
+       exit 1
+       ;;
+  esac
+done
+shift $(( $OPTIND - 1 ))
+
+skipped=0
+
+for source in "$@" ; do
+
+       # file doesn't exist
+  [[ ! -e $source ]] && {
+    echo 1>&2 "$pgm: skipping '$source': can't stat"
+    skipped=$(( $skipped + 1 ))
+    continue
+  }
+
+       # file isn't a regular file or it's a symlink and its
+       # target isn't regular
+  [[ ! -f $source ]] && {
+    echo 1>&2 "$pgm: skipping '$source': not regular file"
+    skipped=$(( $skipped + 1 ))
+    continue
+  }
+
+       # die if we can't read file
+  [[ ! -r $source ]] && {
+    echo 1>&2 "$pgm: skipping '$source': no read permission"
+    skipped=$(( $skipped + 1 ))
+    continue
+  }
+
+       # the basename of the source file
+  source_basename=${source##*/}
+
+       # Determine the directory containing the source file.  If source
+       # doesn't contain a slash, the file is in the current
+       # directory.  Else, get the dirname of the source file.
+  if [[ $source = /* && $source != /*/* ]] ; then
+    source_dirname=/
+  elif [[ $source = $source_basename ]]; then
+    source_dirname=.
+  else
+    source_dirname=${source%/*}
+  fi
+
+       # the default target directory is the one in which the file
+       # currently resides 
+  targetdir="$source_dirname"
+
+       # if the user specified a target directory, use it
+  [[ -n "$opt_targetdir" ]] && targetdir="$opt_targetdir"
+
+       # die if target dir doesn't exist or is not a directory
+  [[ ! -d "$targetdir" ]] && {
+    echo 1>&2 "$pgm: $targetdir: doesn't exist or is not a directory"
+    exit 1
+  }
+
+       # skip file if we can't write to the target directory
+  [[ ! -w "$targetdir" ]] && {
+    echo 1>&2 "$pgm: skipping '$source': cannot write to directory '$targetdir'"
+    skipped=$(( $skipped + 1 ))
+    continue
+  }
+
+  export source
+  if [[ -z "$now" ]] ; then
+         # create the timestamp representing the last modification time
+         # of the file.  format is "YYYYmmdd.HHMMSS".
+    timestamp=$( perl -MPOSIX=strftime -e '
+                   my @s = lstat $ENV{ source };
+                   my @t = localtime $s[ 9 ];
+                   printf "%04d%02d%02d.%02d%02d%02d%s",
+                            $t[ 5 ] + 1900,
+                            $t[ 4 ] + 1,
+                            $t[ 3 ],
+                            $t[ 2 ],
+                            $t[ 1 ],
+                            $t[ 0 ],
+                            strftime( "%z", localtime );
+                ' )
+  else
+    timestamp=$now
+  fi
+
+       # set the target path
+  target="$targetdir/$source_basename.$timestamp"
+
+       # collapse all clusters slashes to single instances of slashes
+  target=$( echo "$target" | sed 's=///*=/=g' )
+
+       # copy source to target, preserving atime and mtime and, if copy is
+       # successful, print target on stdout
+  if cp -p "$source" "$target" ; then
+    echo "$target"
+  else
+    skipped=$(( $skipped + 1 ))
+    continue
+  fi
+done
+
+[[ $skipped -gt 0 ]] && exit 1
+exit 0
