@@ -149,7 +149,7 @@ for source in "$@" ; do
   export source
   if [[ -z "$now" ]] ; then
          # create the timestamp representing the last modification time
-         # of the file.  format is "YYYYmmdd.HHMMSS".
+         # of the file.  format is "YYYYmmdd.HHMMSSzzzz".
     timestamp=$( perl -MPOSIX=strftime -e '
                    my @s = lstat $ENV{ source };
                    my @t = localtime $s[ 9 ];
