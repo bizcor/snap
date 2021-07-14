@@ -175,7 +175,7 @@ for source in "$@" ; do
        # set the target path
   target="$targetdir/$source_basename.$timestamp"
 
-  if [[ -n name_only ]] ; then
+  if [[ -n $nameonly ]] ; then
     echo "$target"
     continue
   fi
